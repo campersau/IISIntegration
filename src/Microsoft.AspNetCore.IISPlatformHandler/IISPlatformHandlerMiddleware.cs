@@ -22,10 +22,13 @@ namespace Microsoft.AspNetCore.IISPlatformHandler
         private const string XIISWindowsAuthToken = "X-IIS-WindowsAuthToken"; // TODO: Legacy, remove before RTW
         private const string MSPlatformHandlerWinAuthToken = "MS-PLATFORM-HANDLER-WINAUTHTOKEN";
         private const string MSPlatformHandlerClientCert = "MS-PLATFORM-HANDLER-CLIENTCERT";
+        private const string HttpPlatformToken = "HTTP_PLATFORM_TOKEN";
+        private const string MSPlatformHandlerToken = "MS-PLATFORM-HANDLER-TOKEN";
 
         private readonly RequestDelegate _next;
         private readonly IISPlatformHandlerOptions _options;
         private readonly ILogger _logger;
+        private readonly string _platformToken;
 
         public IISPlatformHandlerMiddleware(RequestDelegate next, ILoggerFactory loggerFactory, IOptions<IISPlatformHandlerOptions> options)
         {
@@ -45,10 +48,23 @@ namespace Microsoft.AspNetCore.IISPlatformHandler
             _next = next;
             _options = options.Value;
             _logger = loggerFactory.CreateLogger<IISPlatformHandlerMiddleware>();
+
+            _platformToken = Environment.GetEnvironmentVariable(HttpPlatformToken);
+            if (string.IsNullOrEmpty(_platformToken))
+            {
+                _logger.LogInformation($"{HttpPlatformToken} not detected, {nameof(IISPlatformHandlerMiddleware)} will be skipped.");
+            }
         }
 
         public async Task Invoke(HttpContext httpContext)
         {
+            if (string.IsNullOrEmpty(_platformToken)
+                || !string.Equals(_platformToken, httpContext.Request.Headers[MSPlatformHandlerToken], StringComparison.Ordinal))
+            {
+                _logger.LogTrace($"{HttpPlatformToken} not detected, skipping {nameof(IISPlatformHandlerMiddleware)}.");
+                await _next(httpContext);
+            }
+
             if (_options.ForwardClientCertificate)
             {
                 var header = httpContext.Request.Headers[MSPlatformHandlerClientCert];
